@@ -1,0 +1,107 @@
+{
+	"$schema": "./node_modules/nx/schemas/nx-schema.json",
+	"extends": "nx/presets/npm.json",
+	"defaultBase": "main",
+	"nxCloudAccessToken": "",
+	"nxCloudUrl": "",
+	"nxCloudEncryptionKey": "",
+	"neverConnectToCloud": true,
+	"parallel": 4,
+	"cacheDirectory": "",
+	"useDaemonProcess": false,
+	"useInferencePlugins": true,
+	"workspaceLayout": {
+		"appsDir": "apps",
+		"libsDir": "libs"
+	},
+	"cli": {
+		"packageManager": "npm"
+	},
+	"namedInputs": {
+		"default": ["{projectRoot}/**/*", "sharedGlobals"],
+		"production": [
+			"default",
+			"!{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+			"!{projectRoot}/tsconfig.spec.json",
+			"!{projectRoot}/jest.config.[jt]s",
+			"!{projectRoot}/**/*.stories.@(js|jsx|ts|tsx|mdx)",
+			"!{projectRoot}/src/test-setup.[jt]s",
+			"!{projectRoot}/test-setup.[jt]s"
+		],
+		"sharedGlobals": [
+			"{workspaceRoot}/.github/workflows/ci.yml",
+			"{workspaceRoot}/tools/eslint-rules/**/*"
+		],
+		"testing": [
+			"default",
+			"{workspaceRoot}/jest.preset.js",
+			"{projectRoot}/**/?(*.)+(spec|test).[jt]s?(x)?(.snap)",
+			"{projectRoot}/tsconfig.spec.json",
+			"{projectRoot}/jest.config.[jt]s",
+			"{projectRoot}/src/test-setup.[jt]s"
+		],
+		"linting": [
+			"default",
+			"{workspaceRoot}/.eslintrc.json",
+			"{workspaceRoot}/.eslintignore"
+		],
+
+		"docker": [
+			"{projectRoot}/Dockerfile",
+			"{projectRoot}/.dockerignore",
+			"{workspaceRoot}/docker-compose.yml"
+		],
+
+		"environment": [
+			"{workspaceRoot}/.env",
+			"{workspaceRoot}/.env.local",
+			"{workspaceRoot}/.env.production"
+		]
+	},
+	"targetDefaults": {
+		"build": {
+			"inputs": ["production", "^production"],
+			"outputs": ["{projectRoot}/dist"]
+		},
+		"test": {
+			"inputs": ["testing", "^testing"],
+			"outputs": ["{projectRoot}/coverage"]
+		},
+		"lint": {
+			"inputs": ["linting"],
+			"outputs": []
+		},
+		"docker-build": {
+			"inputs": ["production", "docker"],
+			"outputs": []
+		}
+	},
+	"generators": {
+		"@nx/react": {
+			"application": {
+				"babel": true
+			}
+		},
+		"@nx/node": {
+			"application": {
+				"babel": true
+			}
+		}
+	},
+	"plugins": [
+		{
+			"plugin": "@nx/eslint/plugin",
+			"options": {
+				"targetName": "lint"
+			}
+		},
+		{
+			"plugin": "@nx/webpack/plugin",
+			"options": {
+				"buildTargetName": "build",
+				"serveTargetName": "serve",
+				"previewTargetName": "preview"
+			}
+		}
+	]
+}

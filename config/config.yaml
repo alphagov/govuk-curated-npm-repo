@@ -1,0 +1,84 @@
+storage: /verdaccio/storage/data
+plugins: /verdaccio/plugins
+
+# Authentication
+auth:
+  htpasswd:
+    file: ./htpasswd
+    # Maximum amount of users allowed to register, defaults to "+infinity".
+    max_users: 1000
+
+# Package access control
+packages:
+  # Approved packages only
+  '@company/*':
+    access: $authenticated
+    publish: $authenticated
+    proxy: npmjs
+
+  # All other packages require approval
+  '**':
+    access: $authenticated
+    publish: $authenticated
+    proxy: approval-proxy
+
+# Custom middleware for approval workflow
+middlewares:
+  approval-workflow:
+    enabled: true
+
+# Security configurations
+security:
+  api:
+    jwt:
+      sign:
+        expiresIn: 60d
+        notBefore: 1
+    legacy: true
+
+# Web UI configuration
+web:
+  enable: true
+  title: Secure NPM Registry
+  logo: https://company.com/logo.png
+  gravatar: true
+  scope: '@company'
+  darkMode: false
+
+# Notification system
+notify:
+  slack:
+    webhookUrl: 'SLACK_WEBHOOK_URL'
+    channel: '#npm-security'
+    username: 'verdaccio-bot'
+
+# Logs configuration
+logs:
+  type: stdout
+  format: pretty
+  level: http
+
+# Listen configuration
+listen:
+  - 0.0.0.0:4873
+
+# Upstream configuration with security checks
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 10s
+    maxage: 2m
+    fail_timeout: 5m
+    max_fails: 2
+    cache: true
+
+# Audit configuration
+audit:
+  enabled: true
+  strict_ssl: true
+
+# Publish configuration with approval requirement
+publish:
+  allow_offline: false
+
+

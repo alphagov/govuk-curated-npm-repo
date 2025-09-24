@@ -1,0 +1,24 @@
+{
+	"root": "libs/verdaccio-approval-plugin",
+	"targets": {
+		"test": {
+			"executor": "@nx/jest:jest",
+			"options": {}
+		},
+		"build": {
+			"executor": "@nx/js:tsc",
+			"options": {
+				"outputPath": "dist/libs/verdaccio-approval-plugin",
+				"main": "libs/verdaccio-approval-plugin/src/index.ts",
+				"tsConfig": "libs/verdaccio-approval-plugin/tsconfig.lib.json",
+				"assets": [
+					{
+						"input": "libs/verdaccio-approval-plugin",
+						"glob": "package.json",
+						"output": "."
+					}
+				]
+			}
+		}
+	}
+}
