@@ -15,10 +15,12 @@ services:
     networks:
       - verdaccio-network
 
-  # Downstream Verdaccio instance - uses quarantine plugin
+  # Downstream Verdaccio instance with HMR - uses quarantine plugin
   verdaccio-downstream:
     build:
-      context: .
+      context: ./downstream
+      additional_contexts:
+        libs: ./dist/libs
       dockerfile: Dockerfile.downstream.verdaccio
     container_name: verdaccio-downstream
     ports:
@@ -27,15 +29,21 @@ services:
       - ./docker-data/downstream/storage:/verdaccio/storage
       - ./docker-data/downstream/conf:/verdaccio/conf
       - ./downstream-config.yaml:/verdaccio/conf/config.yaml
-      # - ./dist/libs/verdaccio-approval-plugin:/verdaccio/plugins/verdaccio-approval-plugin
+      # Mount the source code directly for HMR
+      - ./dist/libs/:/app/plugins:ro
       - ./docker-data/downstream/quarantine:/verdaccio/quarantine
+      # Mount nodemon config
+      - ./nodemon.json:/app/nodemon.json
     environment:
       - VERDACCIO_USER_NAME=admin
       - VERDACCIO_USER_PWD=admin123
+      - NODE_ENV=development
     depends_on:
       - verdaccio-upstream
     networks:
       - verdaccio-network
+    # Override the default command to use nodemon
+    command: ["npm", "run", "dev"]
 
   # Test package publisher - publishes suspicious packages to upstream
   test-publisher:
@@ -49,7 +57,6 @@ services:
       - verdaccio-network
     depends_on:
       - verdaccio-upstream
-    #command: sh -c "apk add curl && sleep 2 && sh /app/scripts/publish-test-packages.sh"
     command: sh -c "apk add curl && sleep infinity"
 
 networks:

@@ -3,8 +3,12 @@
 	"version": "1.0.0",
 	"main": "src/index.js",
 	"types": "src/index.d.ts",
-	"files": ["src"],
-	"keywords": ["security,verdaccio,plugin,filter,verdaccio-plugin,node"],
+	"files": [
+		"src"
+	],
+	"keywords": [
+		"security,verdaccio,plugin,filter,verdaccio-plugin,node"
+	],
 	"author": "",
 	"license": "ISC",
 	"description": "",
@@ -21,6 +25,7 @@
 		"@types/jest": "^30.0.0",
 		"@types/node": "^24.5.2",
 		"@types/semver": "^7.7.1",
+		"@types/tar": "^6.1.13",
 		"@typescript-eslint/eslint-plugin": "^8.44.1",
 		"@verdaccio/babel-preset": "^10.0.0",
 		"@verdaccio/eslint-config": "^10.0.0",

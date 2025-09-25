@@ -1,0 +1,34 @@
+FROM verdaccio/verdaccio:6
+
+USER root
+
+RUN apk add curl
+
+# Install nodemon globally for HMR
+RUN npm install -g nodemon
+
+# Install typescript and ts-node for TypeScript compilation
+RUN npm install -g typescript ts-node 
+
+# Create directories and set permissions
+RUN mkdir -p /verdaccio/storage && \
+    mkdir -p /app/plugins/ && \
+    chown -R $VERDACCIO_USER_UID /verdaccio/ && \
+    chown -R $VERDACCIO_USER_UID /app/ 
+
+WORKDIR /app
+COPY package*.json .
+COPY . .
+
+COPY --from=libs . /plugins
+
+RUN npm i
+
+RUN cd ./plugins && npm i
+
+USER $VERDACCIO_USER_UID
+
+EXPOSE 4873
+
+# Default command will be overridden by docker-compose
+CMD ["verdaccio"]

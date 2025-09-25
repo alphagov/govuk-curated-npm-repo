@@ -19,6 +19,27 @@
 					}
 				]
 			}
+		},
+		"dev": {
+			"executor": "nx:run-commands",
+			"options": {
+				"commands": ["chmod +x scripts/dev.sh && ./scripts/dev.sh"],
+				"parallel": false
+			}
+		},
+		"dev-rebuild": {
+			"executor": "nx:run-commands",
+			"options": {
+				"commands": ["chmod +x scripts/dev.sh && ./scripts/dev.sh --rebuild"],
+				"parallel": false
+			}
+		},
+		"dev-stack": {
+			"executor": "nx:run-commands",
+			"options": {
+				"commands": ["docker-compose up"],
+				"parallel": false
+			}
 		}
 	}
 }
