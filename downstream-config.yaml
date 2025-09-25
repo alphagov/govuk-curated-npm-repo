@@ -1,0 +1,50 @@
+storage: /verdaccio/storage
+plugins: /verdaccio/plugins
+
+auth:
+  htpasswd:
+    file: /verdaccio/conf/htpasswd
+
+uplinks:
+  upstream:
+    url: http://verdaccio-upstream:4873/
+    timeout: 60s
+
+# Plugin configuration
+middlewares:
+  approval-plugin:
+    enabled: true
+    quarantinePath: /verdaccio/quarantine
+    autoscan: true
+
+packages:
+  "@*/*":
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: upstream
+
+  "**":
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: upstream
+
+server:
+  keepAliveTimeout: 60
+
+logs: { type: stdout, format: pretty, level: http }
+
+security:
+  api:
+    legacy: true
+  web:
+    sign:
+      algorithm: HS256
+      expiresIn: 7d
+    verify:
+      algorithm: HS256
+
+web:
+  title: Verdaccio Downstream (with Quarantine)
+  enable: true

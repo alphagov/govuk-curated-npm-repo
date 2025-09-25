@@ -90,8 +90,12 @@ export class QuarantinePlugin implements IPluginMiddleware<QuarantineConfig> {
       this.logger,
     );
 
+    // Create a sub-app for API routes
+    const express = require("express");
+    const apiApp = express();
+
     // Register api routes
-    app.use("/-/quarantine", middleware.apiRoutes());
+    app.use("/-/quarantine", apiApp);
 
     // Intercept package downloads
     app.use("/:package(*)", middleware.packageInterceptor());
@@ -110,3 +114,7 @@ export default function quarantinePlugin(
 ): QuarantinePlugin {
   return new QuarantinePlugin(config, options);
 }
+
+// Also add CommonJS export for compatibility
+module.exports = quarantinePlugin;
+module.exports.default = quarantinePlugin;

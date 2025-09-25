@@ -1,10 +1,10 @@
-import { Router, Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, Application } from "express";
 import { ApprovalManager } from "./approval-manager";
 import { PackageScanner } from "./scanner";
 import { Logger } from "@verdaccio/types";
 
 export interface QuarantineMiddleware {
-  apiRoutes(): Router;
+  apiRoutes(app: Application): void;
   packageInterceptor(): (
     req: Request,
     res: Response,
@@ -18,11 +18,9 @@ export function createQuarantineMiddleware(
   _quarantinePath: string,
   logger: Logger,
 ): QuarantineMiddleware {
-  function apiRoutes(): Router {
-    const router = Router();
-
+  function apiRoutes(app: Application): void {
     // Get all package requests
-    router.get(
+    app.get(
       "/requests",
       async (_req: Request, res: Response): Promise<void> => {
         try {
@@ -39,7 +37,7 @@ export function createQuarantineMiddleware(
     );
 
     // Approve a package
-    router.put(
+    app.put(
       "/approve/:package(*)",
       async (req: Request, res: Response): Promise<any> => {
         const rawPackageName = req.params["package"];
@@ -70,7 +68,7 @@ export function createQuarantineMiddleware(
     );
 
     // Get package risk assessment
-    router.get(
+    app.get(
       "/scan/:package(*)",
       async (req: Request, res: Response): Promise<any> => {
         const rawPackageName = req.params["package"];
@@ -98,23 +96,20 @@ export function createQuarantineMiddleware(
     );
 
     // Get blocked attempts log
-    router.get(
-      "/blocked",
-      async (_req: Request, res: Response): Promise<void> => {
-        try {
-          const attempts = await approvalManager.getBlockedAttempts();
-          res.json(attempts);
-        } catch (error) {
-          logger.error(
-            { plugin: "quarantine", error },
-            "Failed to get blocked attempts",
-          );
-          res.status(500).json({ error: "Failed to get blocked attempts" });
-        }
-      },
-    );
+    app.get("/blocked", async (_req: Request, res: Response): Promise<void> => {
+      try {
+        const attempts = await approvalManager.getBlockedAttempts();
+        res.json(attempts);
+      } catch (error) {
+        logger.error(
+          { plugin: "quarantine", error },
+          "Failed to get blocked attempts",
+        );
+        res.status(500).json({ error: "Failed to get blocked attempts" });
+      }
+    });
 
-    return router;
+    return;
   }
 
   function packageInterceptor() {

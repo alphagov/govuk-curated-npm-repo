@@ -1,0 +1,47 @@
+# upstream-config.yaml
+storage: /verdaccio/storage
+
+auth:
+  htpasswd:
+    file: /verdaccio/conf/htpasswd
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+    timeout: 60s
+
+packages:
+  "@*/*":
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+  "**":
+    access: $all
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+server:
+  keepAliveTimeout: 60
+
+middlewares:
+  audit:
+    enabled: true
+
+log: { type: stdout, format: pretty, level: http }
+
+security:
+  api:
+    legacy: true
+  web:
+    sign:
+      algorithm: HS256
+      expiresIn: 7d
+    verify:
+      algorithm: HS256
+
+web:
+  title: Verdaccio Upstream
+  enable: true

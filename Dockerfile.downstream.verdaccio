@@ -1,0 +1,20 @@
+FROM verdaccio/verdaccio:6
+
+USER root
+
+# Copy custom configuration and plugins
+COPY downstream-config.yaml /opt/verdaccio/verdaccio/conf/config.yaml 
+COPY dist/libs/ /verdaccio/plugins/
+
+# Install plugin and dependencies
+RUN cd /verdaccio/plugins/verdaccio-approval-plugin && npm install 
+
+# Create directories and set permissions
+RUN mkdir -p /verdaccio/storage && \
+    chown -R $VERDACCIO_USER_UID /verdaccio/
+
+USER $VERDACCIO_USER_UID
+
+EXPOSE 4873
+
+CMD ["verdaccio", "--config", "/verdaccio/conf/config.yaml", "--listen", "0.0.0.0:4873"]

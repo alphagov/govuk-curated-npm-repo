@@ -1,0 +1,14 @@
+{
+  "name": "clean-test-package",
+  "version": "1.0.0",
+  "description": "Clean test package that should pass scanning",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "lodash": "^4.17.21"
+  },
+  "author": "Test Author",
+  "license": "ISC"
+}
