@@ -16,7 +16,7 @@ let config = {
   },
   uplinks: {
     npmjs: {
-      url: "https://registry.npmjs.org/",
+      url: "http://verdaccio-upstream:4873",
     },
   },
   self_path: "./",
@@ -27,6 +27,7 @@ let config = {
       proxy: "npmjs",
     },
     "**": {
+      access: "$all",
       proxy: "npmjs",
     },
   },

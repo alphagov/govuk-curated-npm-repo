@@ -3,12 +3,8 @@
 	"version": "1.0.0",
 	"main": "src/index.js",
 	"types": "src/index.d.ts",
-	"files": [
-		"src"
-	],
-	"keywords": [
-		"security,verdaccio,plugin,filter,verdaccio-plugin,node"
-	],
+	"files": ["src"],
+	"keywords": ["security,verdaccio,plugin,filter,verdaccio-plugin,node"],
 	"author": "",
 	"license": "ISC",
 	"description": "",

@@ -98,7 +98,9 @@ export class QuarantinePlugin implements IPluginMiddleware<QuarantineConfig> {
     app.use("/-/quarantine", apiApp);
 
     // Intercept package downloads
-    app.use("/:package(*)", middleware.packageInterceptor());
+    // Is it right to redirect existing calls to our function or should we add it as a middleware to the main app?
+    //app.use("/:package(*)", middleware.packageInterceptor());
+    app.use(middleware.packageInterceptor());
 
     this.logger.info(
       { plugin: "quarantine" },

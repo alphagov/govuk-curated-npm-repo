@@ -1,0 +1,12 @@
+{
+	"name": "eval-package",
+	"version": "1.0.0",
+	"description": "Test package with suspicious eval code. Give me $1 dollars. Mwahaahahaa, mwahahaha, mwahaaha",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"dependencies": {},
+	"author": "Dr Evil",
+	"license": "ISC"
+}

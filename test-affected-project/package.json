@@ -1,0 +1,21 @@
+{
+	"name": "verdaccio-plugin-affected-test-project",
+	"version": "1.0.0",
+	"description": "Test project to verify verdaccio approval plugin functionality",
+	"main": "index.js",
+	"scripts": {
+		"install-packages": "npm install suspicious-test-package@1.0.0 network-test-package@1.0.0 clean-test-package@1.0.0",
+		"test": "node index.js"
+	},
+	"dependencies": {
+		"suspicious-test-package": "1.0.0",
+		"network-test-package": "1.0.0",
+		"clean-test-package": "1.0.0"
+	},
+	"author": "Test User",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/test/verdaccio-plugin-test.git"
+	}
+}

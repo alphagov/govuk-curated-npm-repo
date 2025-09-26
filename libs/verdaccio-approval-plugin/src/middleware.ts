@@ -118,63 +118,70 @@ export function createQuarantineMiddleware(
       res: Response,
       next: NextFunction,
     ): Promise<any> => {
+      const packageName = req.params["scope"]
+        ? `${req.params["scope"]}/${req.params["package"]}`
+        : req.params["package"];
+      const packageVersion = req.params["filename"]
+        ? req.params["filename"]
+        : req.params["version"]
+          ? req.params["version"]
+          : undefined;
       logger.info(
         { plugin: "quarantine" },
-        `req.method:${req.method} req.params["package"]:${req.params["package"]}`,
+        `req.method:${req.method} packageName:${packageName} packageVersion:${packageVersion}`,
       );
+
       // Only intercept GET requests for package tarballs
       if (req.method != "GET" || req.url.includes("/-/")) {
         next();
-        return;
-      }
-      const rawPackageName = req.params["package"];
-      if (!rawPackageName) {
-        next();
-        return;
-      }
+      } else {
+        const rawPackageName = req.params["package"];
+        if (!rawPackageName) {
+          next();
+        } else {
+          const packageName = decodeURIComponent(rawPackageName);
 
-      const packageName = decodeURIComponent(rawPackageName);
+          try {
+            const approvalStatus =
+              await approvalManager.getApprovalStatus(packageName);
 
-      try {
-        const approvalStatus =
-          await approvalManager.getApprovalStatus(packageName);
+            if (approvalStatus === "blocked") {
+              // Log the blocked attempt
+              await approvalManager.logBlockedAttempt(
+                packageName,
+                req.ip || "unknown",
+                req.get("user-agent") || "",
+              );
 
-        if (approvalStatus === "blocked") {
-          // Log the blocked attempt
-          await approvalManager.logBlockedAttempt(
-            packageName,
-            req.ip || "unknown",
-            req.get("user-agent") || "",
-          );
-          res.status(403).json({
-            error: "Package not approved",
-            message: `Package ${packageName} is pending approval. Contact your administrator.`,
-            package: packageName,
-          });
-          return;
+              res.status(403).json({
+                error: "Package not approved",
+                message: `Package ${packageName} is pending approval. Contact your administrator.`,
+                package: packageName,
+              });
+            }
+
+            if (approvalStatus === "pending") {
+              res.status(403).json({
+                error: "Package under review",
+                message:
+                  "Package ${packageName} is currently being reviewed for security.",
+                package: packageName,
+              });
+              return;
+            }
+
+            // Package is approved or not yet requested - let it through
+            next();
+          } catch (error) {
+            logger.error(
+              { plugin: "quarantine", error, package: packageName },
+              `Error checking approval status for package ${packageName}`,
+            );
+            next();
+          }
         }
-
-        if (approvalStatus === "pending") {
-          res.status(403).json({
-            error: "Package under review",
-            message:
-              "Package ${packageName} is currently being reviewed for security.",
-            package: packageName,
-          });
-          return;
-        }
-
-        // Package is approved or not yet requested - let it through
-        next();
-      } catch (error) {
-        logger.error(
-          { plugin: "quarantine", error, package: packageName },
-          `Error checking approval status for package ${packageName}`,
-        );
-        next();
       }
     };
   }
-
   return { apiRoutes, packageInterceptor };
 }

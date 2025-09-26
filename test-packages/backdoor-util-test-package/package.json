@@ -1,0 +1,12 @@
+{
+	"name": "backdoor-util",
+	"version": "2.0.0",
+	"description": "Test package with suspicious backdoor code",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"dependencies": {},
+	"author": "Test Author",
+	"license": "ISC"
+}

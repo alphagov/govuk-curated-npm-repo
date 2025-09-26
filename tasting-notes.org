@@ -1,0 +1,45 @@
+* Typescript config
+
+The Typescript config in the root of the project is configured to compile to modern ESM syntax
+The Typescript config in the libs/verdaccio-approval-plugin folder is configured to compile to CommonJS syntax as required by verdaccio.
+This is a good example of how nx creates a "Standard operating procedure" which can be overridden by individual projects as needs be.
+
+* Debt
+
+** Test Packages publishing script
+
+scripts/publish-test-packages.sh
+
+This does not work. Instead as a workaround the test-publisher container has been jerry rigged as follows
+
+#+begin_src yaml
+  test-publisher:
+    image: node:18-alpine
+    container_name: test-publisher
+    working_dir: /app
+    volumes:
+      - ./test-packages:/app/test-packages
+      - ./scripts:/app/scripts
+    networks:
+      - verdaccio-network
+    depends_on:
+      - verdaccio-upstream
+    command: sh -c "apk add curl && sleep infinity"
+#+end_src
+
+If you launch the docker stack as follows
+
+#+begin_src sh
+  docker-compose up --build --force-recreate
+  # Then shell into the test-publisher container
+  docker exec -it test-publisher /bin/ash
+  # Then change directory to the test package you wish to publish, for example
+  cd test-packages/backdoor-util-test-package/
+  # Then login manually
+  # username: admin
+  # password: admin123
+  npm login --registry http://verdaccio-upstream:4873
+  # Then publish manually
+  npm publish --registry http://verdaccio-upstream:4873  
+#+end_src
+
