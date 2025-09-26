@@ -1,0 +1,5 @@
+{
+	"watch": ["/verdaccio/plugins/verdaccio-approval-plugin"],
+	"ext": "js,ts,json",
+	"ignore": ["node_modules/", "**/*.test.js", "**/*.spec.js"]
+}

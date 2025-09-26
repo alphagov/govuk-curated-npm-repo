@@ -118,17 +118,21 @@ export function createQuarantineMiddleware(
       res: Response,
       next: NextFunction,
     ): Promise<any> => {
+      logger.info(
+        { plugin: "quarantine" },
+        `req.method:${req.method} req.params["package"]:${req.params["package"]}`,
+      );
       // Only intercept GET requests for package tarballs
       if (req.method != "GET" || req.url.includes("/-/")) {
-        return next();
+        next();
+        return;
       }
       const rawPackageName = req.params["package"];
       if (!rawPackageName) {
-        return res.status(400).json({
-          error: "Package parameter is missing",
-          message: "Package name must be provided in the URL",
-        });
+        next();
+        return;
       }
+
       const packageName = decodeURIComponent(rawPackageName);
 
       try {

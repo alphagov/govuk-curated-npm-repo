@@ -22,6 +22,8 @@ services:
       additional_contexts:
         libs: ./dist/libs
       dockerfile: Dockerfile.downstream.verdaccio
+      args:
+        BUILD_MODE: local # This will be overridden in CI/CD
     container_name: verdaccio-downstream
     ports:
       - "4873:4873"
@@ -29,21 +31,19 @@ services:
       - ./docker-data/downstream/storage:/verdaccio/storage
       - ./docker-data/downstream/conf:/verdaccio/conf
       - ./downstream-config.yaml:/verdaccio/conf/config.yaml
-      # Mount the source code directly for HMR
-      - ./dist/libs/:/app/plugins:ro
+      # Mount the plugin directly to where Verdaccio expects it (only used in local dev)
+      - ./dist/libs/verdaccio-approval-plugin:/verdaccio/plugins/verdaccio-approval-plugin:rw
       - ./docker-data/downstream/quarantine:/verdaccio/quarantine
       # Mount nodemon config
-      - ./nodemon.json:/app/nodemon.json
+      - ./downstream/nodemon.json:/app/nodemon.json
     environment:
       - VERDACCIO_USER_NAME=admin
       - VERDACCIO_USER_PWD=admin123
-      - NODE_ENV=development
+      - NODE_ENV=development # This signals development mode to the entrypoint
     depends_on:
       - verdaccio-upstream
     networks:
       - verdaccio-network
-    # Override the default command to use nodemon
-    command: ["npm", "run", "dev"]
 
   # Test package publisher - publishes suspicious packages to upstream
   test-publisher:

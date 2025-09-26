@@ -1,5 +1,8 @@
 FROM verdaccio/verdaccio:6
 
+# Build argument to determine if we're in CI/CD or local dev
+ARG BUILD_MODE=local
+
 USER root
 
 RUN apk add curl
@@ -17,18 +20,42 @@ RUN mkdir -p /verdaccio/storage && \
     chown -R $VERDACCIO_USER_UID /app/ 
 
 WORKDIR /app
-COPY package*.json .
+
+# Copy package.json files first for better caching
+COPY package*.json ./
+
+# Copy application files
 COPY . .
 
-COPY --from=libs . /plugins
+# Conditional logic based on build mode
+RUN if [ "$BUILD_MODE" = "ci" ]; then \
+        echo "Building for CI/CD - copying plugin files to /verdaccio/plugins" && \
+        mkdir -p /verdaccio/plugins && \
+        cp -r /tmp/libs/* /verdaccio/plugins/ 2>/dev/null || echo "No libs to copy from build context"; \
+    else \
+        echo "Building for local development - plugin will be mounted to /verdaccio/plugins"; \
+    fi
 
-RUN npm i
+# Install app dependencies
+RUN npm install
 
-RUN cd ./plugins && npm i
+# Install plugin dependencies if in CI mode
+RUN if [ "$BUILD_MODE" = "ci" ]; then \
+        echo "Installing plugin dependencies for CI/CD" && \
+        cd /verdaccio/plugins/verdaccio-approval-plugin && npm install; \
+    fi
+
+# Copy and setup entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
+# Fix ownership of all /app contents and verdaccio home directory for the verdaccio user
+RUN chown -R $VERDACCIO_USER_UID:$VERDACCIO_USER_UID /app && \
+    chown -R $VERDACCIO_USER_UID:$VERDACCIO_USER_UID /opt/verdaccio && \
+    chown -R $VERDACCIO_USER_UID:$VERDACCIO_USER_UID /verdaccio
 
 USER $VERDACCIO_USER_UID
 
 EXPOSE 4873
 
-# Default command will be overridden by docker-compose
-CMD ["verdaccio"]
+CMD ["/app/entrypoint.sh"]
