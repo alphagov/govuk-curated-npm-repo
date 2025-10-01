@@ -25,15 +25,6 @@ export default class QuarantineStoragePlugin
     this.config = config;
     this.logger = options.logger;
     this.options = options;
-
-    try {
-    } catch (error) {
-      this.logger.error(
-        { plugin: "quarantine" },
-        JSON.stringify(error, null, 2),
-      );
-      throw error;
-    }
   }
 
   public add(name: string, callback: Function): void {
