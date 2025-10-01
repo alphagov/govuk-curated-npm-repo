@@ -31,8 +31,8 @@ services:
       - ./docker-data/downstream/storage:/verdaccio/storage
       - ./docker-data/downstream/conf:/verdaccio/conf
       - ./downstream-config.yaml:/verdaccio/conf/config.yaml
-      # Mount the plugin directly to where Verdaccio expects it (only used in local dev)
-      - ./dist/libs/verdaccio-approval-plugin:/verdaccio/plugins/verdaccio-approval-plugin:rw
+      # Mount the plugins folder directly to where Verdaccio expects it (only used in local dev)
+      - ./dist/libs/:/verdaccio/plugins/:rw
       - ./docker-data/downstream/quarantine:/verdaccio/quarantine
       # Mount nodemon config
       - ./downstream/nodemon.json:/app/nodemon.json

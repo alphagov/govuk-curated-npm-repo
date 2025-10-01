@@ -10,8 +10,22 @@ if [ "$NODE_ENV" = "development" ] && [ -d "/verdaccio/plugins/verdaccio-approva
     echo "Development mode detected - installing plugin dependencies"
     cd /verdaccio/plugins/verdaccio-approval-plugin
     npm install
-	ln -sf /verdaccio/plugins/verdaccio-approval-plugin /app/node_modules/verdaccio-approval-plugin
+	# ln -sf /verdaccio/plugins/verdaccio-approval-plugin /app/node_modules/verdaccio-approval-plugin
+
+	cd /verdaccio/plugins/verdaccio-quarantine-plugin
+	npm install
+	# ln -sf /verdaccio/plugins/verdaccio-quarantine-plugin /app/node_modules/verdaccio-quarantine-plugin
+
+	# Create symlinks in /app/node_modules
+    cd /app
+    rm -rf node_modules/verdaccio-approval-plugin node_modules/verdaccio-quarantine-plugin
+    ln -sf /verdaccio/plugins/verdaccio-approval-plugin node_modules/verdaccio-approval-plugin
+    ln -sf /verdaccio/plugins/verdaccio-quarantine-plugin node_modules/verdaccio-quarantine-plugin
     
+    # Verify the symlinks
+    echo "Verifying symlinks:"
+    ls -la node_modules/ | grep verdaccio
+	
     echo "Plugin setup complete. Starting verdaccio in development mode with nodemon"
     cd /app
     exec npm run dev

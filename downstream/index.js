@@ -1,7 +1,9 @@
 const startServer = require("verdaccio").default;
 
 let config = {
-  storage: "./storage",
+  store: {
+    "quarantine-plugin": {},
+  },
   middlewares: {
     "approval-plugin": {
       enabled: true,

@@ -2,10 +2,13 @@ import { searchUtils } from "@verdaccio/core";
 import {
   AbbreviatedManifest,
   IPackageStorage,
+  IUploadTarball,
+  IReadTarball,
   Logger,
   Config,
   Manifest,
   MergeTags,
+  Package,
   Token,
   TokenFilter,
   Version,
@@ -19,19 +22,31 @@ import {
   UnPublishManifest,
 } from "./type";
 
+import { ILocalPackageManager } from "@verdaccio/types";
+
 import { PassThrough, Readable } from "node:stream";
+import { UploadTarball, ReadTarball } from "@verdaccio/streams";
 
 // Custom storage that wraps the base storage and adds quarantine logic
-export class QuarantineStorage {
-  private logger: Logger;
+export class QuarantineStorage implements ILocalPackageManager {
+  public logger: Logger;
   private config: any;
+  private name: string;
   private baseStorage: any; // Verdaccio's internal storage
 
-  constructor(baseStorage: any, config: any, logger: Logger) {
+  constructor(baseStorage: any, config: any, logger: Logger, name: string) {
     this.baseStorage = baseStorage;
     this.config = config;
     this.logger = logger;
+    this.name = name;
     console.log(this.config);
+  }
+
+  public add(name: string, callback: Function): void {
+    this.baseStorage
+      .add(name)
+      .then(() => callback(null))
+      .catch((error: any) => callback(error));
   }
 
   public async addPackage(name: string): Promise<void> {
@@ -50,8 +65,25 @@ export class QuarantineStorage {
     return await this.baseStorage.changePackage(name, metadata, revision);
   }
 
+  public async createPackage(
+    name: string,
+    value: Package,
+    cb: Function,
+  ): Promise<void> {
+    console.log(name);
+    console.log(value);
+    cb(null);
+  }
+  public async deletePackage(name: string, cb: Function): Promise<void> {
+    console.log(name);
+    cb(null);
+  }
   public async deleteToken(user: string, tokenKey: string): Promise<any> {
     return await this.baseStorage.deleteToken(user, tokenKey);
+  }
+
+  public get(callback: Function): void {
+    callback(null);
   }
 
   public async getCachedPackages(
@@ -161,6 +193,17 @@ export class QuarantineStorage {
     return await this.baseStorage.mergeTagsNext(name, tags);
   }
 
+  public async readPackage(name: string, cb: Function): Promise<void> {
+    console.log(name);
+    cb(null);
+  }
+
+  public readTarball(name: string): IReadTarball {
+    const readTarballStream: IReadTarball = new ReadTarball({});
+    console.log(name);
+    return readTarballStream;
+  }
+
   public async readTokens(filter: TokenFilter): Promise<Token[]> {
     return await this.readTokens(filter);
   }
@@ -180,12 +223,25 @@ export class QuarantineStorage {
     );
   }
 
-  public async removePackage(
+  public async removePackage(cb: Function): Promise<void> {
+    try {
+      this.debug({}, "Removing package @{name}");
+      cb(null);
+      this.debug({}, "Removed package @{name}");
+    } catch (error) {
+      cb(error);
+      this.debug({ error }, "Failed to remove package @{name}, @{error}");
+    }
+  }
+
+  public async savePackage(
     name: string,
-    revision: string,
-    username: string,
+    json: Package,
+    cb: Function,
   ): Promise<void> {
-    return await this.baseStorage.removePackage(name, revision, username);
+    console.log(name);
+    console.log(JSON.stringify(json, null, 2));
+    cb(null);
   }
 
   public async saveToken(token: Token): Promise<any> {
@@ -225,6 +281,20 @@ export class QuarantineStorage {
     return await this.baseStorage.updateManifest(manifest, options);
   }
 
+  public async updatePackage(
+    name: string,
+    update: Function,
+    write: Function,
+    transform: Function,
+    cb: Function,
+  ): Promise<void> {
+    console.log(name);
+    update(null);
+    write(null);
+    transform(null);
+    cb(null);
+  }
+
   public async updateVersionsNext(
     name: string,
     remoteManifest: Manifest,
@@ -244,5 +314,15 @@ export class QuarantineStorage {
       contentReadable,
       signal.signal,
     );
+  }
+
+  public writeTarball(name: string): IUploadTarball {
+    console.log(name);
+    const uploadStream: IUploadTarball = new UploadTarball({});
+    return uploadStream;
+  }
+
+  private debug(conf: object, template: string): void {
+    this.logger.debug({ name: this.name, ...conf }, `[Minio] ${template}`);
   }
 }

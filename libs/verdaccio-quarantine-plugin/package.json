@@ -15,6 +15,8 @@
 	"dependencies": {
 		"@verdaccio/core": "^6.0.0-6-next.76",
 		"@verdaccio/proxy": "^6.0.0-6-next.54",
+		"@verdaccio/store": "^6.0.0-6-next.56",
+		"@verdaccio/streams": "^10.2.1",
 		"@verdaccio/url": "^11.0.0-6-next.42",
 		"axios": "^1.12.2",
 		"semver": "^7.7.2",

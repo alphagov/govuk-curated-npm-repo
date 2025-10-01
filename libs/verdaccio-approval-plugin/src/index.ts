@@ -1,5 +1,5 @@
 import {
-  IPluginMiddleware,
+  IPluginStorage,
   IBasicAuth,
   IStorageManager,
   PluginOptions,
@@ -21,7 +21,7 @@ export interface QuarantineConfig extends Config {
   riskThreshold?: number;
 }
 
-export class QuarantinePlugin implements IPluginMiddleware<QuarantineConfig> {
+export class QuarantinePlugin implements IPluginStorage<QuarantineConfig> {
   private config: QuarantineConfig;
   private logger: Logger;
   private quarantinePath: string;
