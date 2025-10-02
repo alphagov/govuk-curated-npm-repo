@@ -1,7 +1,7 @@
 import {
   Callback,
   IPluginStorage,
-  IPackageStorage,
+  IPackageStorageManager,
   Logger,
   PluginOptions,
   Token,
@@ -28,7 +28,10 @@ export default class QuarantineStoragePlugin
   }
 
   public add(name: string, callback: Function): void {
-    console.log(name);
+    this.logger.info(
+      { plugin: "Verdaccio-Quarantine-Plugin" },
+      `add Method called on QuarantineStoragePlugin with name: ${name}`,
+    );
     callback(null);
   }
 
@@ -38,14 +41,21 @@ export default class QuarantineStoragePlugin
     return (async () => undefined)();
   }
 
-  public get(callback: Function): void {
+  public get(callback: Callback): void {
+    this.logger.info(
+      { plugin: "Verdaccio-Quarantine-Plugin" },
+      "Get Method called",
+    );
     callback(null, []);
   }
 
-  public getPackageStorage(name: string): IPackageStorage {
-    const LocalStorage = require("@verdaccio/store").Storage;
-    const baseStorage = new LocalStorage(this.config, this.options);
-    return new QuarantineStorage(baseStorage, this.config, this.logger, name);
+  public getPackageStorage(name: string): IPackageStorageManager {
+    // Name could be suspicious-test-package for example
+    this.logger.info(
+      { plugin: "Verdaccio-Quarantine-Plugin" },
+      `getPackageStorage Method called on QuarantineStoragePlugin with name: ${name}`,
+    );
+    return new QuarantineStorage(this.config, this.logger, name);
   }
 
   public getSecret(): Promise<string> {

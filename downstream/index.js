@@ -2,7 +2,9 @@ const startServer = require("verdaccio").default;
 
 let config = {
   store: {
-    "quarantine-plugin": {},
+    "quarantine-plugin": {
+      approvalListPath: "./approvals.json",
+    },
   },
   middlewares: {
     "approval-plugin": {
@@ -33,11 +35,13 @@ let config = {
       proxy: "npmjs",
     },
   },
-  log: {
-    type: "stdout",
-    format: "pretty",
-    level: "http",
-  },
+  logs: [
+    {
+      type: "stdout",
+      format: "pretty",
+      level: "debug",
+    },
+  ],
 };
 
 startServer(
