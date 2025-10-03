@@ -22,6 +22,8 @@ import {
   //InternalError,
 } from "./errors";
 
+import Approvals from "./approvals";
+
 export class QuarantineStorage implements IPackageStorageManager {
   public logger: Logger;
   private config: PluginConfig;
@@ -30,6 +32,7 @@ export class QuarantineStorage implements IPackageStorageManager {
   // @ts-ignore:next-line
   private quarantinePath: string;
   private approvalsListPath: string;
+  private approvals: Approvals;
   // @ts-ignore:next-line
   private uplinks: {
     [key: string]: {
@@ -50,135 +53,7 @@ export class QuarantineStorage implements IPackageStorageManager {
     this.uplinks = this.config["uplinks"] || {
       npmjs: { url: "https://registry.npmjs.org", timeout: 3000 },
     };
-  }
-
-  public approvePackage(pkg: Package, version?: string): void {
-    const approvalsDB = this.loadApprovals();
-    this.saveApprovals(approvalsDB);
-    console.log(pkg);
-    console.log(version);
-    const quarantinePackagePath = path.join(this.quarantinePath, pkg.name);
-    const storagePackagePath = path.join(this.storagePath, pkg.name);
-    console.log(quarantinePackagePath);
-    console.log(storagePackagePath);
-  }
-
-  private saveApprovals(approvals: any) {
-    const approvalsFilePath: string = this.getApprovalsFilePath();
-    fs.writeFileSync(
-      approvalsFilePath,
-      JSON.stringify(approvals, null, 2),
-      "utf8",
-    );
-  }
-
-  private getApprovalsFilePath(): string {
-    const approvalFile = this.approvalsListPath || "./approvals.json";
-    return path.isAbsolute(approvalFile)
-      ? approvalFile
-      : path.join(process.cwd(), approvalFile);
-  }
-
-  /**
-   * Load approvals from JSON file
-   */
-  private loadApprovals(): any {
-    try {
-      const absolutePath = this.getApprovalsFilePath();
-
-      this.logger.debug(
-        { approvalFile: absolutePath },
-        "Loading approvals from file",
-      );
-
-      // Check if file exists
-      if (!fs.existsSync(absolutePath)) {
-        this.logger.info(
-          { approvalFile: absolutePath },
-          "Approvals file does not exist - creating with empty list",
-        );
-
-        const defaultApprovals = { packages: [] };
-
-        // Create directory if it doesn't exist
-        const dir = path.dirname(absolutePath);
-        if (!fs.existsSync(dir)) {
-          fs.mkdirSync(dir, { recursive: true });
-        }
-
-        // Write default approvals file
-        fs.writeFileSync(
-          absolutePath,
-          JSON.stringify(defaultApprovals, null, 2),
-          "utf8",
-        );
-
-        return defaultApprovals;
-      }
-
-      const data = fs.readFileSync(absolutePath, "utf8");
-      return JSON.parse(data);
-    } catch (err) {
-      this.logger.error({ err }, "Failed to load approvals file");
-      return { packages: [] };
-    }
-  }
-
-  /**
-   * Check if a package version is approved
-   */
-  private isApproved(pkg: Package): boolean {
-    const approvals = this.loadApprovals();
-    const approvedPackages = approvals.packages || [];
-
-    // Check if package is in approval list
-    const approval = approvedPackages.find(
-      (approved: any) => approved.name === this.packageName,
-    );
-
-    if (!approval) {
-      this.logger.warn(
-        { packageName: this.packageName },
-        "Package not in approval list",
-      );
-      return false;
-    }
-
-    // If approval has specific versions, check them
-    if (approval.versions && Array.isArray(approval.versions)) {
-      // Get all versions from the package manifest
-      const versions = Object.keys(pkg.versions || {});
-
-      // Check if any version in the package is approved
-      const hasApprovedVersion = versions.some((v) =>
-        approval.versions.includes(v),
-      );
-
-      if (!hasApprovedVersion) {
-        this.logger.warn(
-          { packageName: this.packageName, versions },
-          "No approved versions found in package",
-        );
-        return false;
-      } else {
-        this.logger.info(
-          {
-            packageName: this.packageName,
-          },
-          "Package version approved",
-        );
-        return true;
-      }
-    }
-
-    // If no specific verions defined, all versions are approved
-    this.logger.info(
-      {
-        packageName: this.packageName,
-      },
-      "Package approved",
-    );
-    return true;
+    this.approvals = new Approvals(this.approvalsListPath, logger);
   }
 
   /**
@@ -499,7 +374,7 @@ export class QuarantineStorage implements IPackageStorageManager {
       }
 
       // Check if package is approved
-      if (!this.isApproved(pkg)) {
+      if (!this.approvals.isApproved(pkg.name)) {
         const forbiddenError: ForbiddenError = new ForbiddenError(
           `Package '${this.packageName}' is not approved for use. Please contact your administrator.`,
         );

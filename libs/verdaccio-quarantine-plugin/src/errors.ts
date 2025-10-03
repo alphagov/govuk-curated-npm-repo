@@ -34,3 +34,15 @@ export class InternalError extends VerdaccioError {
     super(message, 500);
   }
 }
+
+export class PackageNotFoundError extends VerdaccioError {
+  constructor(pkg: string) {
+    super(pkg, 404, "ENOENT");
+  }
+}
+
+export class PackageVersionNotFoundError extends PackageNotFoundError {
+  constructor(pkg: string, version: string) {
+    super(`${pkg}:${version}`);
+  }
+}
