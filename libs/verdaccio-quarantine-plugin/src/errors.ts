@@ -25,7 +25,7 @@ export class NotFoundError extends VerdaccioError {
 
 export class ForbiddenError extends VerdaccioError {
   constructor(message: string) {
-    super(message, 403);
+    super(message, 404, "ENOENT");
   }
 }
 

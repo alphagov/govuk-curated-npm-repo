@@ -27,13 +27,56 @@ export class QuarantineStorage implements IPackageStorageManager {
   private config: PluginConfig;
   private packageName: string;
   private storagePath: string;
+  // @ts-ignore:next-line
+  private quarantinePath: string;
+  private approvalsListPath: string;
+  // @ts-ignore:next-line
+  private uplinks: {
+    [key: string]: {
+      url: string;
+      timeout?: string | void; // Match Verdaccio's type
+    };
+  };
 
   constructor(config: PluginConfig, logger: Logger, packageName: string) {
     this.config = config;
     this.logger = logger;
     this.packageName = packageName;
-    const baseStoragePath = this.config["storage"] || "./storage";
+    const baseStoragePath = this.config["storagePath"] || "./storage";
     this.storagePath = path.join(baseStoragePath, packageName);
+    const baseQuarantinePath = this.config["quarantinePath"] || "./quarantine";
+    this.quarantinePath = path.join(baseQuarantinePath, packageName);
+    this.approvalsListPath = this.config["approvalsListPath"];
+    this.uplinks = this.config["uplinks"] || {
+      npmjs: { url: "https://registry.npmjs.org", timeout: 3000 },
+    };
+  }
+
+  public approvePackage(pkg: Package, version?: string): void {
+    const approvalsDB = this.loadApprovals();
+    this.saveApprovals(approvalsDB);
+    console.log(pkg);
+    console.log(version);
+    const quarantinePackagePath = path.join(this.quarantinePath, pkg.name);
+    const storagePackagePath = path.join(this.storagePath, pkg.name);
+    console.log(quarantinePackagePath);
+    console.log(storagePackagePath);
+  }
+
+  private saveApprovals(approvals: any) {
+    const approvalsFilePath: string = this.getApprovalsFilePath();
+    fs.writeFileSync(
+      approvalsFilePath,
+      JSON.stringify(approvals, null, 2),
+      "utf8",
+    );
+  }
+
+  private getApprovalsFilePath(): string {
+    const approvalFile = this.approvalsListPath || "./approvals.json";
+    return path.isAbsolute(approvalFile)
+      ? approvalFile
+      : path.join(process.cwd(), approvalFile);
   }
 
   /**
@@ -41,16 +84,37 @@ export class QuarantineStorage implements IPackageStorageManager {
    */
   private loadApprovals(): any {
     try {
-      const approvalFile =
-        this.config["approvalListPath"] || "./approvals.json";
-      const absolutePath = path.isAbsolute(approvalFile)
-        ? approvalFile
-        : path.join(process.cwd(), approvalFile);
+      const absolutePath = this.getApprovalsFilePath();
 
       this.logger.debug(
         { approvalFile: absolutePath },
         "Loading approvals from file",
       );
+
+      // Check if file exists
+      if (!fs.existsSync(absolutePath)) {
+        this.logger.info(
+          { approvalFile: absolutePath },
+          "Approvals file does not exist - creating with empty list",
+        );
+
+        const defaultApprovals = { packages: [] };
+
+        // Create directory if it doesn't exist
+        const dir = path.dirname(absolutePath);
+        if (!fs.existsSync(dir)) {
+          fs.mkdirSync(dir, { recursive: true });
+        }
+
+        // Write default approvals file
+        fs.writeFileSync(
+          absolutePath,
+          JSON.stringify(defaultApprovals, null, 2),
+          "utf8",
+        );
+
+        return defaultApprovals;
+      }
 
       const data = fs.readFileSync(absolutePath, "utf8");
       return JSON.parse(data);
@@ -165,6 +229,222 @@ export class QuarantineStorage implements IPackageStorageManager {
     });
   }
 
+  /*
+   * Download a tarball from a URL and save it to a directory
+   */
+  private downloadTarball(
+    tarballUrl: string,
+    destPath: string,
+    version: string,
+    callback: CallbackAction,
+  ): void {
+    this.logger.info(
+      { tarballUrl, version, packageName: this.packageName },
+      `Downloading tarball for version ${version}`,
+    );
+
+    const http = require("http");
+    const urlObj = new URL(tarballUrl);
+
+    // Extract filename from URL or use default
+    const filename =
+      path.basename(urlObj.pathname) || `${this.packageName}-${version}.tgz`;
+    const filePath = path.join(destPath, filename);
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 80,
+      path: urlObj.pathname + urlObj.search,
+      method: "GET",
+      headers: {
+        "User-Agent": "Verdaccio-Quarantine-Plugin",
+      },
+      timeout: 60000, // 60 second timeout for large tarballs
+      rejectUnauthorized: true,
+    };
+
+    const file = fs.createWriteStream(filePath);
+
+    const req = http.request(options, (response: any) => {
+      if (response.statusCode !== 200) {
+        this.logger.error(
+          { statusCode: response.statusCode, tarballUrl, version },
+          `Failed to download tarball - upstream returned ${response.statusCode}`,
+        );
+        file.close();
+        fs.unlink(filePath, () => {}); // Clean up partial file
+        return callback(new Error(`Upstream returned ${response.statusCode}`));
+      }
+
+      response.pipe(file);
+
+      file.on("finish", () => {
+        file.close();
+        this.logger.info(
+          { version, packageName: this.packageName, filePath },
+          `Tarball downloaded successfully for version ${version}`,
+        );
+        callback(null);
+      });
+
+      file.on("error", (err: any) => {
+        file.close();
+        fs.unlink(filePath, () => {}); // Clean up partial file
+        this.logger.error(
+          { err, version, packageName: this.packageName },
+          `Error writing tarball file`,
+        );
+        callback(err);
+      });
+    });
+
+    req.on("error", (err: any) => {
+      file.close();
+      fs.unlink(filePath, () => {}); // Clean up partial file
+      this.logger.error(
+        { err, tarballUrl, version },
+        `Error downloading tarball`,
+      );
+      callback(err);
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      file.close();
+      fs.unlink(filePath, () => {}); // Clean up partial file
+      this.logger.error({ tarballUrl, version }, `Tarball download timed out`);
+      callback(new Error("Download timeout"));
+    });
+
+    req.end();
+  }
+
+  /**
+   * Fetch package from upstream, save to quarantine, and return 404
+   */
+  private fetchFromUpstream(
+    fileName: string,
+    callback: ReadPackageCallback,
+  ): void {
+    const uplinkName: string = Object.keys(this.uplinks)[0] || "npmjs";
+    const uplink = this.uplinks[uplinkName];
+
+    if (!uplink) {
+      this.logger.error("No uplinks configured");
+      return callback(new NotFoundError("No uplinks configured"));
+    }
+
+    const packageUrl = `${uplink.url}/${this.packageName}`;
+
+    this.logger.info(
+      { packageName: this.packageName, url: packageUrl },
+      `Fetching package from upstream ${packageUrl}`,
+    );
+
+    // Use http module
+    const http = require("http");
+    const urlObj = new URL(packageUrl);
+
+    // Parse timeout from string to number
+    const timeout = uplink?.timeout
+      ? typeof uplink.timeout === "string"
+        ? parseInt(uplink.timeout, 10)
+        : uplink.timeout
+      : 30000;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || 80,
+      path: urlObj.pathname + urlObj.search,
+      method: "GET",
+      headers: {
+        "User-Agent": "Verdaccio-Quarantine-Plugin",
+        Accept: "application/json",
+      },
+      timeout: timeout,
+    };
+
+    const req = http.request(options, (response: any) => {
+      if (response.statusCode !== 200) {
+        this.logger.info(
+          { statusCode: response.statusCode, packageName: this.packageName },
+          "Upstream returned non-200 status",
+        );
+
+        return callback(
+          new NotFoundError(
+            `Upstream returned ${response.statusCode} for package '${this.packageName}'`,
+          ),
+        );
+      }
+
+      let data = "";
+      response.on("data", (chunk: any) => {
+        data += chunk;
+      });
+
+      response.on("end", () => {
+        try {
+          const pkg: Package = JSON.parse(data);
+
+          this.logger.info(
+            { packageName: this.packageName },
+            "Package fetched from upstream - saving to quarantine",
+          );
+
+          // Save to quarantine
+          this.savePackage(fileName, pkg, (saveErr) => {
+            if (saveErr) {
+              this.logger.info(
+                { err: saveErr },
+                "Failed to save package to quarantine",
+              );
+              return callback(saveErr);
+            }
+
+            this.logger.info(
+              { packageName: this.packageName },
+              "Package saved to quarantine - blocking access until approved",
+            );
+
+            // Return NotFoundError to block the install
+            callback(
+              new NotFoundError(
+                `Package '${this.packageName}' is in quarantine pending approval`,
+              ),
+            );
+          });
+        } catch (parseErr) {
+          this.logger.info(
+            { err: parseErr },
+            "Failed to parse upstream response",
+          );
+          callback(
+            new NotFoundError("Failed to parse package data from upstream"),
+          );
+        }
+      });
+    });
+
+    req.on("error", (fetchErr: any) => {
+      this.logger.info(
+        { err: fetchErr },
+        `Failed to fetch from upstream: ${JSON.stringify(fetchErr, null, 2)}`,
+      );
+      callback(
+        new NotFoundError(`Failed to fetch package: ${fetchErr.message}`),
+      );
+    });
+
+    req.on("timeout", () => {
+      req.destroy();
+      this.logger.info("Request to upstream timed out");
+      callback(new NotFoundError("Upstream request timed out"));
+    });
+
+    req.end();
+  }
+
   public async init(config: PluginConfig): Promise<void> {
     this.logger.debug(
       { packageName: this.packageName },
@@ -189,11 +469,12 @@ export class QuarantineStorage implements IPackageStorageManager {
         if (err.code === "ENOENT") {
           this.logger.info(
             { fileName, packageName: this.packageName },
-            "Package not found in QuarantineStorage.readPackage",
+            "Package not found in quarantine - fetching from upstream",
           );
-          return callback(
-            new NotFoundError(`Package '${this.packageName} not found`),
-          );
+
+          // Fetch from OUR uplinks, not Verdaccio's
+          this.fetchFromUpstream(fileName, callback);
+          return;
         }
         this.logger.error(
           { err },
@@ -282,7 +563,7 @@ export class QuarantineStorage implements IPackageStorageManager {
   }
 
   /**
-   * Save package - write package.json
+   * Save package - write package.json and download all version tarballs
    */
   public savePackage(
     fileName: string,
@@ -294,10 +575,10 @@ export class QuarantineStorage implements IPackageStorageManager {
       `Saving package in QuarantineStorage.savePackage fileName: ${fileName}`,
     );
 
-    const packagePath = path.join(this.storagePath, fileName);
+    const packagePath = path.join(this.quarantinePath, "package.json");
 
     // Create directory asynchronously with recursive option
-    fs.mkdir(this.storagePath, { recursive: true }, (mkdirErr) => {
+    fs.mkdir(this.quarantinePath, { recursive: true }, (mkdirErr) => {
       if (mkdirErr) {
         this.logger.error(
           { fileName, packageName: this.packageName },
@@ -308,10 +589,10 @@ export class QuarantineStorage implements IPackageStorageManager {
 
       this.logger.info(
         { fileName, packageName: this.packageName },
-        `Directory ${this.storagePath} ready`,
+        `Directory ${this.quarantinePath} ready`,
       );
 
-      // Write the file
+      // Write the package.json file first
       fs.writeFile(packagePath, JSON.stringify(json, null, 2), (err) => {
         if (err) {
           this.logger.error(
@@ -320,11 +601,100 @@ export class QuarantineStorage implements IPackageStorageManager {
           );
           return callback(err);
         }
+
         this.logger.info(
           { fileName, packageName: this.packageName },
-          `Package saved successfully`,
+          `Package metadata saved successfully`,
         );
-        callback(null);
+
+        // Now create version folders and download tarballs
+        const versions = Object.keys(json.versions);
+
+        if (versions.length === 0) {
+          this.logger.info(
+            { packageName: this.packageName },
+            "No versions to download",
+          );
+          return callback(null);
+        }
+
+        let completed = 0;
+        let hasError = false;
+
+        versions.forEach((version) => {
+          const versionPath = path.join(this.quarantinePath, version);
+          const versionData = json.versions[version];
+
+          // Check if versionData exists
+          if (!versionData) {
+            this.logger.warn(
+              { version, packageName: this.packageName },
+              `No version data found for version ${version}`,
+            );
+            completed++;
+            if (completed === versions.length && !hasError) {
+              callback(null);
+            }
+            return;
+          }
+
+          // Create version directory
+          fs.mkdir(versionPath, { recursive: true }, (mkdirErr) => {
+            if (mkdirErr) {
+              if (!hasError) {
+                hasError = true;
+                this.logger.error(
+                  { fileName, packageName: this.packageName, version },
+                  `Failed to create version directory. Error: ${mkdirErr}`,
+                );
+                return callback(mkdirErr);
+              }
+              return;
+            }
+
+            // Download tarball for this version
+            if (versionData.dist && versionData.dist.tarball) {
+              this.downloadTarball(
+                versionData.dist.tarball,
+                versionPath,
+                version,
+                (downloadErr) => {
+                  if (downloadErr && !hasError) {
+                    hasError = true;
+                    this.logger.error(
+                      { version, error: downloadErr },
+                      `Failed to download tarball for version ${version}`,
+                    );
+                    return callback(downloadErr);
+                  }
+
+                  completed++;
+
+                  if (completed === versions.length) {
+                    this.logger.info(
+                      {
+                        packageName: this.packageName,
+                        versionsCount: versions.length,
+                      },
+                      `All tarballs downloaded successfully`,
+                    );
+                    callback(null);
+                  }
+                },
+              );
+            } else {
+              this.logger.warn(
+                { version, packageName: this.packageName },
+                `No tarball URL found for version ${version}`,
+              );
+              completed++;
+
+              if (completed === versions.length && !hasError) {
+                callback(null);
+              }
+            }
+          });
+        });
       });
     });
   }

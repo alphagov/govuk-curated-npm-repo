@@ -4,6 +4,11 @@ let config = {
   store: {
     "quarantine-plugin": {
       approvalListPath: "./approvals.json",
+      uplinks: {
+        npmjs: {
+          url: "http://verdaccio-upstream:4873",
+        },
+      },
     },
   },
   middlewares: {
@@ -18,11 +23,7 @@ let config = {
       file: "./htpasswd",
     },
   },
-  uplinks: {
-    npmjs: {
-      url: "http://verdaccio-upstream:4873",
-    },
-  },
+  uplinks: {},
   self_path: "./",
   packages: {
     "@*/*": {
