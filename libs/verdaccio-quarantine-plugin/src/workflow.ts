@@ -1,81 +1,86 @@
 import * as fs from "node:fs";
 import * as path from "path";
-import { PackageVersionNotFoundError } from "./errors";
-import { Logger } from "@verdaccio/types";
+import { v4 as uuidv4 } from "uuid";
 import * as lockfile from "proper-lockfile";
 import Ajv, { JSONSchemaType } from "ajv";
+import { Logger } from "@verdaccio/types";
 
-export enum ApprovalStatus {
-  Approved = "Approved",
-  Rejected = "Rejected",
+export enum WorkflowStatus {
+  New = "New",
+  InProgress = "InProgress",
+  Completed = "Completed",
+  Failed = "Failed",
+  Cancelled = "Cancelled",
 }
 
-export interface IApprovalItem {
+export interface IWorkflowItem {
+  id: string;
   packageName: string;
   packageVersion?: string;
-  status: ApprovalStatus;
+  status: WorkflowStatus;
   created: string; // ISO string for JSON serialization
   updated?: string;
 }
 
-interface IApprovalsData {
-  packages: IApprovalItem[];
-  approvalsLog: any[];
+interface IWorkflowData {
+  workflowItems: IWorkflowItem[];
+  transitionLog: any[];
 }
 
-interface ApprovalsOptions {
+interface WorkflowOptions {
   debounceMs?: number; // Debounce save operations (default: 1000ms)
   maxRetries?: number; // Max retries for file operations (default: 3)
   retryDelayMs?: number; // Delay between retries (default: 100ms)
   lockOptions?: lockfile.LockOptions; // Custom lock options
 }
 
-export default class Approvals {
-  private approvalsDBPath: string;
-  private approvals: any;
+export default class Workflow {
+  private workflowDBPath: string;
+  private workflow: IWorkflowData;
   private logger: Logger;
   private ajv: Ajv;
   private saveTimer: NodeJS.Timeout | null = null;
   private pendingSave: boolean = false;
-  private options: Required<ApprovalsOptions>;
+  private options: Required<WorkflowOptions>;
 
   // JSON Schema for validation
-  private readonly approvalsSchema: JSONSchemaType<IApprovalsData> = {
+  private readonly workflowSchema: JSONSchemaType<IWorkflowData> = {
     type: "object",
     properties: {
-      packages: {
+      workflowItems: {
         type: "array",
         items: {
           type: "object",
           properties: {
+            id: { type: "string" },
             packageName: { type: "string" },
             packageVersion: { type: "string", nullable: true },
             status: {
               type: "string",
-              enum: Object.values(ApprovalStatus),
+              enum: Object.values(WorkflowStatus),
             },
             created: { type: "string" },
             updated: { type: "string", nullable: true },
           },
-          required: ["packageName", "status", "created"],
+          required: ["id", "packageName", "status", "created"],
           additionalProperties: false,
         },
       },
-      approvalsLog: {
+      transitionLog: {
         type: "array",
         items: { type: "object" },
       },
     },
-    required: ["packages", "approvalsLog"],
+    required: ["workflowItems", "transitionLog"],
     additionalProperties: false,
   };
 
   constructor(
-    approvalsDBPath: string,
+    workflowDBPath: string,
     logger: Logger,
-    options: ApprovalsOptions = {},
+    options: WorkflowOptions = {},
   ) {
-    this.approvalsDBPath = approvalsDBPath;
+    this.workflowDBPath = workflowDBPath;
     this.logger = logger;
     this.options = {
       debounceMs: options.debounceMs ?? 1000,
@@ -90,70 +95,88 @@ export default class Approvals {
         },
       },
     };
+
     // Initialize AJV for JSON validation
     this.ajv = new Ajv();
-    this.approvals = this.loadApprovals();
-  }
 
-  public approvePackageVersion(pkgName: string, version: string): void {
-    if (!this.approvals) this.loadApprovals();
-    const approved = this.isApproved(pkgName);
-    if (!approved) throw new PackageVersionNotFoundError(pkgName, version);
-    approved.versions.push(version);
-    this.saveApprovals();
-  }
-
-  private getApprovalsFilePath(): string {
-    const approvalFile = this.approvalsDBPath || "./approvals.json";
-    return path.isAbsolute(approvalFile)
-      ? approvalFile
-      : path.join(process.cwd(), approvalFile);
+    this.workflow = this.loadWorkflow();
   }
 
   /**
-   * Check if a package version is approved
+   * Update an existing workflow item
    */
-  public isApproved(pkgName: string): any {
-    if (!this.approvals) this.loadApprovals();
-    this.logger.info(
-      { package: pkgName },
-      `Checking approval for package:${pkgName} in ${JSON.stringify(this.approvals, null, 2)}`,
+  public updateWorkflowItem(workflowItem: IWorkflowItem): void {
+    const index = this.workflow.workflowItems.findIndex(
+      (item) => item.id === workflowItem.id,
     );
 
-    const found = this.approvals.packages.find(
-      (approved: any) => approved.packageName === pkgName,
-    );
+    if (index === -1) {
+      throw new Error(`Workflow item with id ${workflowItem.id} not found`);
+    }
 
-    this.logger.info({ found, pkgName }, `Find result ${found}`);
+    // Update the timestamp
+    workflowItem.updated = new Date().toISOString();
 
-    return !!found;
+    this.workflow.workflowItems[index] = workflowItem;
+    this.debouncedSave();
   }
 
   /**
-   * Add a new approval item
+   * Update workflow item status
    */
-  public addApproval(
+  public updateWorkflowItemStatus(id: string, status: WorkflowStatus): void {
+    const item = this.getWorkflowItem(id);
+    if (!item) {
+      throw new Error(`Workflow item with id ${id} not found`);
+    }
+
+    item.status = status;
+    item.updated = new Date().toISOString();
+
+    // Log the transition
+    this.workflow.transitionLog.push({
+      itemId: id,
+      previousStatus: item.status,
+      newStatus: status,
+      timestamp: new Date().toISOString(),
+    });
+
+    this.debouncedSave();
+  }
+
+  /**
+   * Add a new workflow item
+   */
+  public addWorkflowItem(
     packageName: string,
     packageVersion?: string,
-    approved?: boolean,
-  ): IApprovalItem {
-    const approvalItem: IApprovalItem = {
+  ): IWorkflowItem {
+    const workflowItem: IWorkflowItem = {
+      id: uuidv4(),
       packageName: packageName,
       ...(packageVersion !== undefined && { packageVersion }),
-      status: approved ? ApprovalStatus.Approved : ApprovalStatus.Rejected,
+      status: WorkflowStatus.New,
       created: new Date().toISOString(),
     };
 
-    this.approvals.packages.push(approvalItem);
+    this.workflow.workflowItems.push(workflowItem);
     this.debouncedSave();
 
-    return approvalItem;
+    return workflowItem;
   }
 
-  public isApprovedVersion(pkgName: string, version: string): boolean {
-    const approved = this.isApproved(pkgName);
-    if (!approved) return false;
-    return approved.versions.includes(version);
+  /**
+   * Get workflow item by ID
+   */
+  public getWorkflowItem(id: string): IWorkflowItem | undefined {
+    return this.workflow.workflowItems.find((item) => item.id === id);
+  }
+
+  /**
+   * Get all workflow items
+   */
+  public getAllWorkflowItems(): IWorkflowItem[] {
+    return [...this.workflow.workflowItems]; // Return a copy
   }
 
   /**
@@ -165,7 +188,7 @@ export default class Approvals {
       this.saveTimer = null;
     }
     if (this.pendingSave) {
-      await this.saveApprovals();
+      await this.saveWorkflow();
       this.pendingSave = false;
     }
   }
@@ -177,17 +200,24 @@ export default class Approvals {
     await this.flushSave();
   }
 
+  private getWorkflowFilePath(): string {
+    const workflowFile = this.workflowDBPath || "./workflow.json";
+    return path.isAbsolute(workflowFile)
+      ? workflowFile
+      : path.join(process.cwd(), workflowFile);
+  }
+
   /**
-   * Validate approvals data against JSON schema
+   * Validate workflow data against JSON schema
    */
-  private validateApprovals(data: any): data is IApprovalsData {
-    const validate = this.ajv.compile(this.approvalsSchema);
+  private validateWorkflow(data: any): data is IWorkflowData {
+    const validate = this.ajv.compile(this.workflowSchema);
     const valid = validate(data);
 
     if (!valid) {
       this.logger.error(
         { errors: validate.errors },
-        "Approvals validation failed",
+        "Workflow validation failed",
       );
       return false;
     }
@@ -196,27 +226,27 @@ export default class Approvals {
   }
 
   /**
-   * Load approvals from JSON file with retry logic
+   * Load workflow from JSON file with retry logic
    */
-  private loadApprovals(): IApprovalsData {
-    const absolutePath = this.getApprovalsFilePath();
+  private loadWorkflow(): IWorkflowData {
+    const absolutePath = this.getWorkflowFilePath();
 
-    return this.withRetrySync<IApprovalsData>(() => {
+    return this.withRetrySync<IWorkflowData>(() => {
       try {
         this.logger.debug(
-          { approvalsFile: absolutePath },
-          "Loading approvals from file",
+          { workflowFile: absolutePath },
+          "Loading workflow from file",
         );
 
         // Check if file exists
         if (!fs.existsSync(absolutePath)) {
           this.logger.info(
-            { approvalsFile: absolutePath },
-            "Approvals file does not exist - creating with empty list",
+            { workflowFile: absolutePath },
+            "Workflow file does not exist - creating with empty list",
           );
-          const defaultApprovals: IApprovalsData = {
-            packages: [],
-            approvalsLog: [],
+          const defaultWorkflow: IWorkflowData = {
+            workflowItems: [],
+            transitionLog: [],
           };
 
           // Create directory if it doesn't exist
@@ -228,23 +258,23 @@ export default class Approvals {
           // Write default workflow file
           fs.writeFileSync(
             absolutePath,
-            JSON.stringify(defaultApprovals, null, 2),
+            JSON.stringify(defaultWorkflow, null, 2),
             "utf8",
           );
-          return defaultApprovals;
+          return defaultWorkflow;
         }
 
         const data = fs.readFileSync(absolutePath, "utf8");
         const parsed = JSON.parse(data);
 
         // Validate structure with JSON schema
-        if (!this.validateApprovals(parsed)) {
-          throw new Error("Invalid approvals file structure");
+        if (!this.validateWorkflow(parsed)) {
+          throw new Error("Invalid workflow file structure");
         }
 
         return parsed;
       } catch (err) {
-        this.logger.error({ err }, "Failed to load approvals file");
+        this.logger.error({ err }, "Failed to load workflow file");
 
         // Try to restore from backup
         const backupPath = `${absolutePath}.backup`;
@@ -253,7 +283,7 @@ export default class Approvals {
           try {
             const backupData = fs.readFileSync(backupPath, "utf8");
             const parsed = JSON.parse(backupData);
-            if (this.validateApprovals(parsed)) {
+            if (this.validateWorkflow(parsed)) {
               this.logger.info({}, "Successfully restored from backup");
               return parsed;
             }
@@ -263,7 +293,7 @@ export default class Approvals {
         }
 
         // Return default if all else fails
-        return { packages: [], approvalsLog: [] };
+        return { workflowItems: [], transitionLog: [] };
       }
     });
   }
@@ -279,21 +309,21 @@ export default class Approvals {
     }
 
     this.saveTimer = setTimeout(() => {
-      this.saveApprovals()
+      this.saveWorkflow()
         .then(() => {
           this.pendingSave = false;
         })
-        .catch((err: any) => {
+        .catch((err) => {
           this.logger.error({ err }, "Debounced save failed");
         });
     }, this.options.debounceMs);
   }
 
   /**
-   * Save approvals to JSON file with atomic write, locking, and retry logic
+   * Save workflow to JSON file with atomic write, locking, and retry logic
    */
-  private async saveApprovals(): Promise<void> {
-    const absolutePath = this.getApprovalsFilePath();
+  private async saveWorkflow(): Promise<void> {
+    const absolutePath = this.getWorkflowFilePath();
 
     await this.withRetry(async () => {
       let release: (() => Promise<void>) | null = null;
@@ -301,7 +331,7 @@ export default class Approvals {
       try {
         // Acquire file lock
         this.logger.debug(
-          { approvalsFile: absolutePath },
+          { workflowFile: absolutePath },
           "Acquiring file lock",
         );
         release = await lockfile.lock(absolutePath, this.options.lockOptions);
@@ -310,12 +340,12 @@ export default class Approvals {
         const backupPath = `${absolutePath}.backup`;
 
         // Validate data before saving
-        if (!this.validateApprovals(this.approvals)) {
-          throw new Error("Approvals data failed validation before save");
+        if (!this.validateWorkflow(this.workflow)) {
+          throw new Error("Workflow data failed validation before save");
         }
 
         // Serialize the data
-        const jsonData = JSON.stringify(this.approvals, null, 2);
+        const jsonData = JSON.stringify(this.workflow, null, 2);
 
         // Write to temporary file first (atomic operation)
         fs.writeFileSync(tempPath, jsonData, "utf8");
@@ -323,7 +353,7 @@ export default class Approvals {
         // Verify the temp file can be parsed
         const verifyData = fs.readFileSync(tempPath, "utf8");
         const parsed = JSON.parse(verifyData);
-        if (!this.validateApprovals(parsed)) {
+        if (!this.validateWorkflow(parsed)) {
           throw new Error("Temp file validation failed");
         }
 
@@ -336,12 +366,12 @@ export default class Approvals {
         fs.renameSync(tempPath, absolutePath);
 
         this.logger.debug(
-          { approvalsFile: absolutePath },
-          "Approvals saved successfully",
+          { workflowFile: absolutePath },
+          "Workflow saved successfully",
         );
       } catch (err) {
-        this.logger.error({ err }, "Failed to save approvals file");
-        throw new Error(`Failed to save approvals: ${err}`);
+        this.logger.error({ err }, "Failed to save workflow file");
+        throw new Error(`Failed to save workflow: ${err}`);
       } finally {
         // Always release the lock
         if (release) {
@@ -430,7 +460,7 @@ export default class Approvals {
    */
   public restoreFromBackup(): boolean {
     try {
-      const absolutePath = this.getApprovalsFilePath();
+      const absolutePath = this.getWorkflowFilePath();
       const backupPath = `${absolutePath}.backup`;
 
       if (!fs.existsSync(backupPath)) {
@@ -442,13 +472,13 @@ export default class Approvals {
       const backupData = fs.readFileSync(backupPath, "utf8");
       const parsed = JSON.parse(backupData);
 
-      if (!this.validateApprovals(parsed)) {
+      if (!this.validateWorkflow(parsed)) {
         this.logger.error({}, "Backup file is invalid");
         return false;
       }
 
       fs.copyFileSync(backupPath, absolutePath);
-      this.approvals = this.loadApprovals();
+      this.workflow = this.loadWorkflow();
       this.logger.info({}, "Successfully restored from backup");
       return true;
     } catch (err) {
@@ -459,8 +489,8 @@ export default class Approvals {
 
   public getStats() {
     return {
-      itemCount: this.approvals.packages.length,
-      fileSizeKB: fs.statSync(this.getApprovalsFilePath()).size / 1024,
+      itemCount: this.workflow.workflowItems.length,
+      fileSizeKB: fs.statSync(this.getWorkflowFilePath()).size / 1024,
     };
   }
 }

@@ -8,8 +8,6 @@
 		"test": "node index.js"
 	},
 	"dependencies": {
-		"suspicious-test-package": "1.0.0",
-		"network-test-package": "1.0.0",
 		"clean-test-package": "1.0.0"
 	},
 	"author": "Test User",

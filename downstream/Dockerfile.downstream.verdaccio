@@ -5,7 +5,7 @@ ARG BUILD_MODE=local
 
 USER root
 
-RUN apk add curl
+RUN apk add curl nano
 
 # Install nodemon globally for HMR
 RUN npm install -g nodemon

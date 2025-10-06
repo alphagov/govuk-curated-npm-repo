@@ -15,12 +15,8 @@ import * as fs from "node:fs";
 import * as path from "path";
 import { UploadTarball, ReadTarball } from "@verdaccio/streams";
 import { PluginConfig } from "./config";
-import {
-  //VerdaccioError,
-  NotFoundError,
-  ForbiddenError,
-  //InternalError,
-} from "./errors";
+import { NotFoundError, ForbiddenError } from "./errors";
+import Workflow from "./workflow";
 
 import Approvals from "./approvals";
 
@@ -32,7 +28,9 @@ export class QuarantineStorage implements IPackageStorageManager {
   // @ts-ignore:next-line
   private quarantinePath: string;
   private approvalsListPath: string;
+  private workflowDBPath: string;
   private approvals: Approvals;
+  private workflow: Workflow;
   // @ts-ignore:next-line
   private uplinks: {
     [key: string]: {
@@ -50,10 +48,12 @@ export class QuarantineStorage implements IPackageStorageManager {
     const baseQuarantinePath = this.config["quarantinePath"] || "./quarantine";
     this.quarantinePath = path.join(baseQuarantinePath, packageName);
     this.approvalsListPath = this.config["approvalsListPath"];
+    this.workflowDBPath = this.config["workflowDBPath"] || "./workflow.json";
     this.uplinks = this.config["uplinks"] || {
       npmjs: { url: "https://registry.npmjs.org", timeout: 3000 },
     };
     this.approvals = new Approvals(this.approvalsListPath, logger);
+    this.workflow = new Workflow(this.workflowDBPath, logger);
   }
 
   /**
@@ -337,14 +337,14 @@ export class QuarantineStorage implements IPackageStorageManager {
       "Reading package",
     );
 
-    const packagePath = path.join(this.storagePath, fileName);
+    const packagePath = path.join(this.quarantinePath, "package.json");
 
     fs.readFile(packagePath, "utf8", (err, data) => {
       if (err) {
         if (err.code === "ENOENT") {
           this.logger.info(
             { fileName, packageName: this.packageName },
-            "Package not found in quarantine - fetching from upstream",
+            `${packagePath} - Package not found in quarantine - fetching from upstream`,
           );
 
           // Fetch from OUR uplinks, not Verdaccio's
@@ -375,6 +375,8 @@ export class QuarantineStorage implements IPackageStorageManager {
 
       // Check if package is approved
       if (!this.approvals.isApproved(pkg.name)) {
+        // Log the workflow item to schedule a scan
+        this.workflow.addWorkflowItem(pkg.name);
         const forbiddenError: ForbiddenError = new ForbiddenError(
           `Package '${this.packageName}' is not approved for use. Please contact your administrator.`,
         );
@@ -386,7 +388,7 @@ export class QuarantineStorage implements IPackageStorageManager {
       }
 
       // Package is approved, return it
-      callback(null, pkg);
+      callback(null);
     });
   }
 

@@ -18,9 +18,12 @@
 		"@verdaccio/store": "^6.0.0-6-next.56",
 		"@verdaccio/streams": "^10.2.1",
 		"@verdaccio/url": "^11.0.0-6-next.42",
+		"ajv": "^8.17.1",
 		"axios": "^1.12.2",
+		"proper-lockfile": "^4.1.2",
 		"semver": "^7.7.2",
-		"tar": "^7.5.1"
+		"tar": "^7.5.1",
+		"uuid": "^13.0.0"
 	},
 	"peerDependencies": {
 		"express": "^4.21.2"
@@ -29,6 +32,7 @@
 		"@types/express": "^5.0.3",
 		"@types/jest": "^30.0.0",
 		"@types/node": "^24.5.2",
+		"@types/proper-lockfile": "^4.1.4",
 		"@types/semver": "^7.7.1",
 		"@types/tar": "^6.1.13",
 		"@typescript-eslint/eslint-plugin": "^8.44.1",

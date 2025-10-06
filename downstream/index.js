@@ -11,13 +11,7 @@ let config = {
       },
     },
   },
-  middlewares: {
-    "approval-plugin": {
-      enabled: true,
-      quarantinePath: "/verdaccio/quarantine",
-      autoscan: true,
-    },
-  },
+  middlewares: {},
   auth: {
     htpasswd: {
       file: "./htpasswd",
