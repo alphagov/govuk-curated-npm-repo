@@ -41,6 +41,12 @@ export class PackageNotFoundError extends VerdaccioError {
   }
 }
 
+export class PackageReadError extends VerdaccioError {
+  constructor(pkg: string) {
+    super(pkg, 404, "ENOENT");
+  }
+}
+
 export class PackageVersionNotFoundError extends PackageNotFoundError {
   constructor(pkg: string, version: string) {
     super(`${pkg}:${version}`);

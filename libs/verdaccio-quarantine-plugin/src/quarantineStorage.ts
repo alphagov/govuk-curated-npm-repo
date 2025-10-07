@@ -15,7 +15,12 @@ import * as fs from "node:fs";
 import * as path from "path";
 import { UploadTarball, ReadTarball } from "@verdaccio/streams";
 import { PluginConfig } from "./config";
-import { NotFoundError, ForbiddenError } from "./errors";
+import {
+  ForbiddenError,
+  InternalError,
+  NotFoundError,
+  PackageReadError,
+} from "./errors";
 import Workflow from "./workflow";
 
 import Approvals from "./approvals";
@@ -197,16 +202,13 @@ export class QuarantineStorage implements IPackageStorageManager {
   /**
    * Fetch package from upstream, save to quarantine, and return 404
    */
-  private fetchFromUpstream(
-    fileName: string,
-    callback: ReadPackageCallback,
-  ): void {
+  private fetchFromUpstream(fileName: string): void {
     const uplinkName: string = Object.keys(this.uplinks)[0] || "npmjs";
     const uplink = this.uplinks[uplinkName];
 
     if (!uplink) {
       this.logger.error("No uplinks configured");
-      return callback(new NotFoundError("No uplinks configured"));
+      throw new NotFoundError("No uplinks configured");
     }
 
     const packageUrl = `${uplink.url}/${this.packageName}`;
@@ -246,10 +248,8 @@ export class QuarantineStorage implements IPackageStorageManager {
           "Upstream returned non-200 status",
         );
 
-        return callback(
-          new NotFoundError(
-            `Upstream returned ${response.statusCode} for package '${this.packageName}'`,
-          ),
+        throw new NotFoundError(
+          `Upstream returned ${response.statusCode} for package "${this.packageName}"`,
         );
       }
 
@@ -268,35 +268,13 @@ export class QuarantineStorage implements IPackageStorageManager {
           );
 
           // Save to quarantine
-          this.savePackage(fileName, pkg, (saveErr) => {
-            if (saveErr) {
-              this.logger.info(
-                { err: saveErr },
-                "Failed to save package to quarantine",
-              );
-              return callback(saveErr);
-            }
-
-            this.logger.info(
-              { packageName: this.packageName },
-              "Package saved to quarantine - blocking access until approved",
-            );
-
-            // Return NotFoundError to block the install
-            callback(
-              new NotFoundError(
-                `Package '${this.packageName}' is in quarantine pending approval`,
-              ),
-            );
-          });
+          this.savePackage(fileName, pkg);
         } catch (parseErr) {
           this.logger.info(
             { err: parseErr },
             "Failed to parse upstream response",
           );
-          callback(
-            new NotFoundError("Failed to parse package data from upstream"),
-          );
+          throw new NotFoundError("Failed to parse package data from upstream");
         }
       });
     });
@@ -306,18 +284,23 @@ export class QuarantineStorage implements IPackageStorageManager {
         { err: fetchErr },
         `Failed to fetch from upstream: ${JSON.stringify(fetchErr, null, 2)}`,
       );
-      callback(
-        new NotFoundError(`Failed to fetch package: ${fetchErr.message}`),
-      );
+      throw new NotFoundError(`Failed to fetch package: ${fetchErr.message}`);
     });
 
     req.on("timeout", () => {
       req.destroy();
       this.logger.info("Request to upstream timed out");
-      callback(new NotFoundError("Upstream request timed out"));
+      throw new NotFoundError("Upstream request timed out");
     });
 
     req.end();
+  }
+
+  private getPackageFilePath(quarantine: boolean = false): string {
+    return path.join(
+      quarantine ? this.quarantinePath : this.storagePath,
+      "package.json",
+    );
   }
 
   public async init(config: PluginConfig): Promise<void> {
@@ -328,68 +311,108 @@ export class QuarantineStorage implements IPackageStorageManager {
     return;
   }
 
+  private isQuarantined(): boolean {
+    const quarantinePackagePath = this.getPackageFilePath(false);
+    try {
+      fs.accessSync(quarantinePackagePath);
+      return true;
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === "ENOENT") {
+        this.logger.info(
+          { packageName: this.packageName },
+          `${quarantinePackagePath} - Package not found in quarantine`,
+        );
+      }
+      return false;
+    }
+  }
+
+  private isStored(): boolean {
+    const storagePackagePath = path.join(this.storagePath, "package.json");
+    try {
+      fs.accessSync(storagePackagePath);
+      return true;
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === "ENOENT") {
+        this.logger.info(
+          { packageName: this.packageName },
+          `${storagePackagePath} - Package not found in storage`,
+        );
+      }
+      return false;
+    }
+  }
+
+  private getPackageFile(fromQuarantine: boolean = false): Package {
+    const pkgPath = `${this.getPackageFilePath(fromQuarantine)}`;
+    try {
+      const data = fs.readFileSync(pkgPath, "utf8");
+      const pkg: Package = JSON.parse(data);
+      return pkg;
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (error.code === "ENOENT") {
+        this.logger.info(
+          { packageName: this.packageName },
+          `${pkgPath} - Package not found in ${fromQuarantine ? "Quarantine" : "Storage"}`,
+        );
+        throw new NotFoundError(
+          `${pkgPath} - Package not found in ${fromQuarantine ? "Quarantine" : "Storage"}`,
+        );
+      }
+      this.logger.info(
+        { packageName: this.packageName },
+        `${pkgPath} - Error reading package in ${fromQuarantine ? "Quarantine" : "Storage"}`,
+      );
+      throw new PackageReadError(
+        `${pkgPath} - Error reading package in ${fromQuarantine ? "Quarantine" : "Storage"}`,
+      );
+    }
+  }
+
   /**
    * Read package metadata - this is where we intercept and check approvals
    */
   public readPackage(fileName: string, callback: ReadPackageCallback): void {
     this.logger.info(
-      { fileName, packageName: this.packageName },
+      { fileName: fileName, packageName: this.packageName },
       "Reading package",
     );
 
-    const packagePath = path.join(this.quarantinePath, "package.json");
-
-    fs.readFile(packagePath, "utf8", (err, data) => {
-      if (err) {
-        if (err.code === "ENOENT") {
-          this.logger.info(
-            { fileName, packageName: this.packageName },
-            `${packagePath} - Package not found in quarantine - fetching from upstream`,
-          );
-
-          // Fetch from OUR uplinks, not Verdaccio's
-          this.fetchFromUpstream(fileName, callback);
-          return;
-        }
-        this.logger.error(
-          { err },
-          `Error reading package file for ${this.packageName}`,
-        );
-        return callback(err);
-      }
-
-      let pkg: Package;
-      try {
-        pkg = JSON.parse(data);
-        this.logger.info(
-          { fileName, packageName: this.packageName },
-          "Package found and read successfully in QuarantineStorage.readPackage",
-        );
-      } catch (parseErr) {
-        this.logger.info(
-          { fileName, packageName: this.packageName },
-          `Package found and not read successfully in QuarantineStorage.readPackage. The error was ${parseErr}`,
-        );
-        return callback(parseErr);
-      }
-
+    if (this.isStored()) {
       // Check if package is approved
-      if (!this.approvals.isApproved(pkg.name)) {
-        // Log the workflow item to schedule a scan
-        this.workflow.addWorkflowItem(pkg.name);
-        const forbiddenError: ForbiddenError = new ForbiddenError(
-          `Package '${this.packageName}' is not approved for use. Please contact your administrator.`,
-        );
-        this.logger.info(
-          { fileName, packageName: this.packageName },
-          "Package found in QuarantineStorage.readPackage but is not in the approval list",
-        );
-        return callback(forbiddenError);
+      if (this.approvals.isApproved(this.packageName)) {
+        try {
+          let pkg: Package = this.getPackageFile();
+          callback(null, pkg);
+        } catch (err) {
+          callback(err);
+        }
       }
+      const forbiddenError: ForbiddenError = new ForbiddenError(
+        `Package '${this.packageName}' is not approved for use. Please contact your administrator.`,
+      );
+      return callback(forbiddenError);
+    }
 
-      // Package is approved, return it
-      callback(null);
-    });
+    if (!this.isQuarantined()) {
+      // Fetch from OUR uplinks, not Verdaccio's
+      try {
+        this.fetchFromUpstream(fileName);
+        // Add new workflow item for the scanner to pick up
+        this.workflow.addWorkflowItem(fileName);
+        // Tell npm cli that the package cannot be found
+        callback(
+          new NotFoundError(
+            `Package '${this.packageName}' is neither quarantined nor approved. Your adminisrator has been notified`,
+          ),
+        );
+      } catch (err) {
+        callback(err);
+      }
+    }
   }
 
   /**
@@ -442,11 +465,7 @@ export class QuarantineStorage implements IPackageStorageManager {
   /**
    * Save package - write package.json and download all version tarballs
    */
-  public savePackage(
-    fileName: string,
-    json: Package,
-    callback: CallbackAction,
-  ): void {
+  public savePackage(fileName: string, json: Package): void {
     this.logger.info(
       { fileName, packageName: this.packageName },
       `Saving package in QuarantineStorage.savePackage fileName: ${fileName}`,
@@ -461,7 +480,9 @@ export class QuarantineStorage implements IPackageStorageManager {
           { fileName, packageName: this.packageName },
           `Failed to create directory in QuarantineStorage.savePackage. Error: ${mkdirErr}`,
         );
-        return callback(mkdirErr);
+        throw new InternalError(
+          `Failed to create directory in QuarantineStorage.savePackage. Error: ${mkdirErr}`,
+        );
       }
 
       this.logger.info(
@@ -476,7 +497,9 @@ export class QuarantineStorage implements IPackageStorageManager {
             { fileName, packageName: this.packageName },
             `Failed to save package in QuarantineStorage.savePackage. Error: ${err}`,
           );
-          return callback(err);
+          throw new InternalError(
+            `Failed to save package in QuarantineStorage.savePackage. Error: ${err}`,
+          );
         }
 
         this.logger.info(
@@ -492,7 +515,6 @@ export class QuarantineStorage implements IPackageStorageManager {
             { packageName: this.packageName },
             "No versions to download",
           );
-          return callback(null);
         }
 
         let completed = 0;
@@ -509,9 +531,6 @@ export class QuarantineStorage implements IPackageStorageManager {
               `No version data found for version ${version}`,
             );
             completed++;
-            if (completed === versions.length && !hasError) {
-              callback(null);
-            }
             return;
           }
 
@@ -524,9 +543,10 @@ export class QuarantineStorage implements IPackageStorageManager {
                   { fileName, packageName: this.packageName, version },
                   `Failed to create version directory. Error: ${mkdirErr}`,
                 );
-                return callback(mkdirErr);
+                throw new InternalError(
+                  `Failed to create version directory. Error: ${mkdirErr}`,
+                );
               }
-              return;
             }
 
             // Download tarball for this version
@@ -542,7 +562,9 @@ export class QuarantineStorage implements IPackageStorageManager {
                       { version, error: downloadErr },
                       `Failed to download tarball for version ${version}`,
                     );
-                    return callback(downloadErr);
+                    throw new InternalError(
+                      `Failed to download tarball for version ${version}`,
+                    );
                   }
 
                   completed++;
@@ -555,7 +577,6 @@ export class QuarantineStorage implements IPackageStorageManager {
                       },
                       `All tarballs downloaded successfully`,
                     );
-                    callback(null);
                   }
                 },
               );
@@ -565,10 +586,6 @@ export class QuarantineStorage implements IPackageStorageManager {
                 `No tarball URL found for version ${version}`,
               );
               completed++;
-
-              if (completed === versions.length && !hasError) {
-                callback(null);
-              }
             }
           });
         });
