@@ -8,7 +8,11 @@
 		"test": "node index.js"
 	},
 	"dependencies": {
-		"clean-test-package": "1.0.0"
+		"clean-test-package": "1.0.0",
+		"backdoor-util": "^1.0.0",
+		"eval-package": "^1.0.0",
+		"network-test-package": "^1.0.0",
+		"suspicious-test-package": "^1.0.0"
 	},
 	"author": "Test User",
 	"license": "MIT",

@@ -21,7 +21,15 @@ if [ "$NODE_ENV" = "development" ] && [ -d "/verdaccio/plugins/verdaccio-approva
     rm -rf node_modules/verdaccio-approval-plugin node_modules/verdaccio-quarantine-plugin
     ln -sf /verdaccio/plugins/verdaccio-approval-plugin node_modules/verdaccio-approval-plugin
     ln -sf /verdaccio/plugins/verdaccio-quarantine-plugin node_modules/verdaccio-quarantine-plugin
-    
+
+	# Create bin symlink in a verdaccio-owned directory
+	mkdir -p /verdaccio/bin
+	ln -sf /verdaccio/plugins/verdaccio-quarantine-plugin/src/scanner.js /verdaccio/bin/scanner
+	chmod +x /verdaccio/plugins/verdaccio-quarantine-plugin/src/scanner.js
+
+	# Add to PATH
+	export PATH="/verdaccio/bin:$PATH"
+   	
     # Verify the symlinks
     echo "Verifying symlinks:"
     ls -la node_modules/ | grep verdaccio

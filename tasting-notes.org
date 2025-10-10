@@ -4,6 +4,77 @@ The Typescript config in the root of the project is configured to compile to mod
 The Typescript config in the libs/verdaccio-approval-plugin folder is configured to compile to CommonJS syntax as required by verdaccio.
 This is a good example of how nx creates a "Standard operating procedure" which can be overridden by individual projects as needs be.
 
+* NX config
+
+The project.json for the quarantine plugin uses an additionalEntryPoints key to ensure the transpiling of the scanner.ts file which is a seperate command line tool that ships with the plugin
+
+#+begin_src js
+  {
+  "root": "libs/verdaccio-quarantine-plugin",
+  "targets": {
+    "test": {
+      "executor": "@nx/jest:jest",
+      "options": {}
+    },
+    "build": {
+      "executor": "@nx/js:tsc",
+      "options": {
+        "outputPath": "dist/libs/verdaccio-quarantine-plugin",
+        "main": "libs/verdaccio-quarantine-plugin/src/index.ts",
+        "tsConfig": "libs/verdaccio-quarantine-plugin/tsconfig.lib.json",
+        "assets": [
+          {
+            "input": "libs/verdaccio-quarantine-plugin",
+            "glob": "package.json",
+            "output": "."
+          }
+        ],
+        "additionalEntryPoints": [
+          "libs/verdaccio-quarantine-plugin/src/scanner.ts"
+        ]
+      }
+    },
+    "build-scanner": {
+      "executor": "@nx/js:tsc",
+      "options": {
+        "outputPath": "dist/libs/verdaccio-quarantine-plugin",
+        "main": "libs/verdaccio-quarantine-plugin/src/scanner.ts",
+        "tsConfig": "libs/verdaccio-quarantine-plugin/tsconfig.lib.json",
+        "assets": []
+      }
+    },
+    "dev": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["chmod +x scripts/dev.sh && ./scripts/dev.sh"],
+        "parallel": false
+      }
+    },
+    "dev-rebuild": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["chmod +x scripts/dev.sh && ./scripts/dev.sh --rebuild"],
+        "parallel": false
+      }
+    },
+    "dev-stack": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": ["docker-compose up"],
+        "parallel": false
+      }
+    }
+  }
+}
+#+end_src
+
+
+* npm learnings
+
+- If a package returns a 404 to the npm client, the dependencies are not requested. A fairly obvious point, but note that when a package becomes approved it may then cause other dependencies of that package to become quarantined.
+- When the npm cli requests a package it first requests the manifest, then it requests a version.
+- The server side manifest (package.json) has a different schema to the client side manifest that we see every day as developers. For example the server side schema has an additional key "versions" which stores an array value.
+
 * Debt
 
 ** Test Packages publishing script
@@ -81,4 +152,67 @@ Need to find a better way to handle the unknown error type in catch blocks
         config.log(`Retry ${i} failed: ${JSON.stringify(err, 2, null)}`);
         error = err;
       }
+#+end_src
+
+** Logging
+
+- Logger not working properly.
+- Not displaying first argument in console.
+- Not displaying errors only info and warn.
+
+** Hot module reload
+
+- Not working for plugins
+- Have to recompile affected plugin manually
+- Have to rebuild docker containers for every plugin change
+- Not a good devX
+
+** Persistance
+
+- Using json files for POC
+- Workflow persistance mechanism uses debounced saves and locking file
+- Rapid calls to addWorkflowItem causes pending saves to be lost, such that
+  - Each call triggers debouncedSave()
+  - The debounce timer keeps getting reset
+  - Only the final state gets saved
+  - Set debounce to 0 as a workaround for POC e.g. this.workflow = new Workflow(workflowDBPath, logger, { debounceMs: 0 });
+
+** Workflow
+
+#+begin_src js
+  {                                                                                                                                                                                                                   
+  "workflowItems": [                                                                                                                                                                                                
+    {                                                                                                                                                                                                               
+      "id": "3154a6ba-5017-4851-9c41-3b5a5c9d26a3",                                                                                                                                                                 
+      "packageName": "clean-test-package",                                                                                                                                                                          
+      "status": "New",                                                                                                                                                                                              
+      "created": "2025-10-08T09:11:16.211Z"                                                                                                                                                                         
+    },                                                                                                                                                                                                              
+    {                                                                                                                                                                                                               
+      "id": "7ff82510-2e8b-4f5b-8a99-28fd628ada44",                                                                                                                                                                 
+      "packageName": "backdoor-util",                                                                                                                                                                               
+      "status": "New",                                                                                                                                                                                              
+      "created": "2025-10-08T09:11:16.272Z"
+    },
+    {
+      "id": "0f0f5cfb-c17e-4bd9-a517-54a8b369a169",
+      "packageName": "eval-package",
+      "status": "New",
+      "created": "2025-10-08T09:11:16.305Z"
+    },
+    {
+      "id": "9cc0c645-5a55-4ed1-9ef1-73ca2527f0a7",
+      "packageName": "network-test-package",
+      "status": "New",
+      "created": "2025-10-08T09:11:16.337Z"
+    },
+    {
+      "id": "31c9c3e4-7d8b-48ed-82cf-3f9922b2c504",
+      "packageName": "suspicious-test-package",
+      "status": "New",
+      "created": "2025-10-08T09:11:16.367Z"
+    }
+  ],
+  "transitionLog": []
+}
 #+end_src

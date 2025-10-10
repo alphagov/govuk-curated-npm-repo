@@ -17,8 +17,27 @@
 						"glob": "package.json",
 						"output": "."
 					}
+				],
+				"additionalEntryPoints": [
+					"libs/verdaccio-quarantine-plugin/src/scanner.ts"
 				]
 			}
+		},
+		"build-scanner": {
+			"executor": "@nx/js:tsc",
+			"options": {
+				"outputPath": "dist/libs/verdaccio-quarantine-plugin",
+				"main": "libs/verdaccio-quarantine-plugin/src/scanner.ts",
+				"tsConfig": "libs/verdaccio-quarantine-plugin/tsconfig.lib.json",
+				"assets": []
+			}
+		},
+		"post-build": {
+			"executor": "nx:run-commands",
+			"options": {
+				"command": "chmod +x dist/libs/verdaccio-quarantine-plugin/scanner.js"
+			},
+			"dependsOn": ["build"]
 		},
 		"dev": {
 			"executor": "nx:run-commands",

@@ -80,6 +80,7 @@ export default class Workflow {
     logger: Logger,
     options: WorkflowOptions = {},
   ) {
+    console.log("constructor");
     this.workflowDBPath = workflowDBPath;
     this.logger = logger;
     this.options = {
@@ -161,7 +162,10 @@ export default class Workflow {
 
     this.workflow.workflowItems.push(workflowItem);
     this.debouncedSave();
-
+    this.logger.info(
+      { workflowItem: workflowItem },
+      `Added workflow item for package: ${packageName} version: ${packageVersion}`,
+    );
     return workflowItem;
   }
 

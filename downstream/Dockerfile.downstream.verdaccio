@@ -1,5 +1,8 @@
 FROM verdaccio/verdaccio:6
 
+# Used for the scanner tool
+ENV PATH="/verdaccio/bin:$PATH"
+
 # Build argument to determine if we're in CI/CD or local dev
 ARG BUILD_MODE=local
 

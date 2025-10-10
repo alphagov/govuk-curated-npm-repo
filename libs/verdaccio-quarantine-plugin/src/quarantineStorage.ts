@@ -58,7 +58,9 @@ export class QuarantineStorage implements IPackageStorageManager {
       npmjs: { url: "https://registry.npmjs.org", timeout: 3000 },
     };
     this.approvals = new Approvals(this.approvalsListPath, logger);
-    this.workflow = new Workflow(this.workflowDBPath, logger);
+    this.workflow = new Workflow(this.workflowDBPath, logger, {
+      debounceMs: 0,
+    });
   }
 
   /**
